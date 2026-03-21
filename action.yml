@@ -1,0 +1,60 @@
+name: 'Setup wfctl'
+description: 'Install the wfctl CLI tool for workflow engine operations'
+inputs:
+  version:
+    description: 'wfctl version to install (e.g., "v0.3.51", "latest")'
+    required: false
+    default: 'latest'
+  token:
+    description: 'GitHub token for downloading releases'
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine version
+      id: version
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          VERSION=$(curl -s https://api.github.com/repos/GoCodeAlone/workflow/releases/latest | grep '"tag_name"' | sed 's/.*"tag_name": "//;s/".*//')
+        else
+          VERSION="${{ inputs.version }}"
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+    - name: Determine OS and arch
+      id: platform
+      shell: bash
+      run: |
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64) ARCH="amd64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+        esac
+        echo "os=${OS}" >> "$GITHUB_OUTPUT"
+        echo "arch=${ARCH}" >> "$GITHUB_OUTPUT"
+    - name: Cache wfctl
+      uses: actions/cache@v4
+      id: cache
+      with:
+        path: /usr/local/bin/wfctl
+        key: wfctl-${{ steps.version.outputs.version }}-${{ steps.platform.outputs.os }}-${{ steps.platform.outputs.arch }}
+    - name: Download wfctl
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        OS="${{ steps.platform.outputs.os }}"
+        ARCH="${{ steps.platform.outputs.arch }}"
+        ASSET="wfctl_${OS}_${ARCH}"
+        URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}.tar.gz"
+        echo "Downloading wfctl ${VERSION} for ${OS}/${ARCH}..."
+        curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" | tar xz -C /tmp
+        sudo mv /tmp/wfctl /usr/local/bin/wfctl
+        chmod +x /usr/local/bin/wfctl
+    - name: Verify installation
+      shell: bash
+      run: wfctl version
