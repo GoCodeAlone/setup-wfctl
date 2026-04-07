@@ -49,10 +49,11 @@ runs:
         VERSION="${{ steps.version.outputs.version }}"
         OS="${{ steps.platform.outputs.os }}"
         ARCH="${{ steps.platform.outputs.arch }}"
-        ASSET="wfctl_${OS}_${ARCH}"
-        URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}.tar.gz"
+        # Release assets use hyphen separators and are bare binaries (no .tar.gz)
+        ASSET="wfctl-${OS}-${ARCH}"
+        URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}"
         echo "Downloading wfctl ${VERSION} for ${OS}/${ARCH}..."
-        curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" | tar xz -C /tmp
+        curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" -o /tmp/wfctl
         sudo mv /tmp/wfctl /usr/local/bin/wfctl
         chmod +x /usr/local/bin/wfctl
     - name: Verify installation
