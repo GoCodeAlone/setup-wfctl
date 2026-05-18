@@ -44,14 +44,30 @@ jobs:
 
 ## Inputs
 
-| Input     | Description                                          | Required | Default                |
-|-----------|------------------------------------------------------|----------|------------------------|
-| `version` | wfctl version to install (e.g. `v0.3.51`, `latest`) | No       | `latest`               |
-| `token`   | GitHub token for downloading releases                | No       | `${{ github.token }}`  |
+| Input         | Description                                                                                                    | Required | Default                |
+|---------------|----------------------------------------------------------------------------------------------------------------|----------|------------------------|
+| `version`     | wfctl version to install (e.g. `v0.3.51`, `latest`)                                                           | No       | `latest`               |
+| `token`       | GitHub token for downloading releases                                                                          | No       | `${{ github.token }}`  |
+| `install-dir` | Directory to install `wfctl` into. When set, `sudo` is **not** used and the directory is added to `PATH`. Defaults to `/usr/local/bin` (existing behaviour). | No       | `` (uses `/usr/local/bin`) |
+
+## Self-hosted runners (no sudo)
+
+On self-hosted runners where `sudo` is unavailable or intentionally blocked, set `install-dir` to a user-writable path:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: GoCodeAlone/setup-wfctl@v1
+    with:
+      install-dir: ${HOME}/.local/bin
+  - run: wfctl version
+```
+
+The action will download `wfctl` directly into the specified directory, `chmod +x` it without `sudo`, and append the directory to `GITHUB_PATH` so subsequent steps can find the binary.
 
 ## Caching
 
-Downloaded binaries are cached using `actions/cache@v4` keyed on version, OS, and architecture. Subsequent runs with the same version skip the download.
+Downloaded binaries are cached using `actions/cache@v5` keyed on version, OS, and architecture. Subsequent runs with the same version skip the download. The cache path reflects the resolved install directory.
 
 ## License
 

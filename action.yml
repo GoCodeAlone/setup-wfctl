@@ -9,6 +9,10 @@ inputs:
     description: 'GitHub token for downloading releases'
     required: false
     default: ${{ github.token }}
+  install-dir:
+    description: 'Directory to install wfctl into. When set, sudo is not used and the directory is appended to GITHUB_PATH. Defaults to /usr/local/bin (existing behavior).'
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
@@ -34,11 +38,24 @@ runs:
         esac
         echo "os=${OS}" >> "$GITHUB_OUTPUT"
         echo "arch=${ARCH}" >> "$GITHUB_OUTPUT"
+    - name: Resolve install directory
+      id: install
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.install-dir }}" ]; then
+          INSTALL_DIR="${{ inputs.install-dir }}"
+          mkdir -p "${INSTALL_DIR}"
+          echo "install_dir=${INSTALL_DIR}" >> "$GITHUB_OUTPUT"
+          echo "use_sudo=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "install_dir=/usr/local/bin" >> "$GITHUB_OUTPUT"
+          echo "use_sudo=true" >> "$GITHUB_OUTPUT"
+        fi
     - name: Cache wfctl
       uses: actions/cache@v5
       id: cache
       with:
-        path: /usr/local/bin/wfctl
+        path: ${{ steps.install.outputs.install_dir }}/wfctl
         key: wfctl-${{ steps.version.outputs.version }}-${{ steps.platform.outputs.os }}-${{ steps.platform.outputs.arch }}
     - name: Download wfctl
       if: steps.cache.outputs.cache-hit != 'true'
@@ -49,13 +66,23 @@ runs:
         VERSION="${{ steps.version.outputs.version }}"
         OS="${{ steps.platform.outputs.os }}"
         ARCH="${{ steps.platform.outputs.arch }}"
+        INSTALL_DIR="${{ steps.install.outputs.install_dir }}"
         # Release assets use hyphen separators and are bare binaries (no .tar.gz)
         ASSET="wfctl-${OS}-${ARCH}"
         URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}"
         echo "Downloading wfctl ${VERSION} for ${OS}/${ARCH}..."
-        curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" -o /tmp/wfctl
-        sudo mv /tmp/wfctl /usr/local/bin/wfctl
-        chmod +x /usr/local/bin/wfctl
+        if [ "${{ steps.install.outputs.use_sudo }}" = "true" ]; then
+          curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" -o /tmp/wfctl
+          sudo mv /tmp/wfctl "${INSTALL_DIR}/wfctl"
+          sudo chmod +x "${INSTALL_DIR}/wfctl"
+        else
+          curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" -o "${INSTALL_DIR}/wfctl"
+          chmod +x "${INSTALL_DIR}/wfctl"
+        fi
+    - name: Add install directory to PATH
+      if: steps.install.outputs.use_sudo == 'false'
+      shell: bash
+      run: echo "${{ steps.install.outputs.install_dir }}" >> "$GITHUB_PATH"
     - name: Verify installation
       shell: bash
       run: wfctl version
