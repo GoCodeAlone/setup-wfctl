@@ -19,12 +19,28 @@ runs:
     - name: Determine version
       id: version
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
       run: |
+        set -euo pipefail
         if [ "${{ inputs.version }}" = "latest" ]; then
-          VERSION=$(curl -s https://api.github.com/repos/GoCodeAlone/workflow/releases/latest | grep '"tag_name"' | sed 's/.*"tag_name": "//;s/".*//')
+          auth_args=()
+          if [ -n "${GH_TOKEN}" ]; then
+            auth_args=(-H "Authorization: Bearer ${GH_TOKEN}")
+          fi
+          VERSION=$(curl -fsSL "${auth_args[@]}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/GoCodeAlone/workflow/releases/latest |
+            sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+            head -n 1)
         else
           VERSION="${{ inputs.version }}"
         fi
+        if [ -z "${VERSION}" ]; then
+          echo "::error::Unable to resolve wfctl version from GoCodeAlone/workflow releases" >&2
+          exit 1
+        fi
+        echo "Resolved wfctl version: ${VERSION}"
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
     - name: Determine OS and arch
       id: platform
@@ -63,6 +79,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
       run: |
+        set -euo pipefail
         VERSION="${{ steps.version.outputs.version }}"
         OS="${{ steps.platform.outputs.os }}"
         ARCH="${{ steps.platform.outputs.arch }}"
@@ -70,13 +87,34 @@ runs:
         # Release assets use hyphen separators and are bare binaries (no .tar.gz)
         ASSET="wfctl-${OS}-${ARCH}"
         URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}"
+        CHECKSUMS_URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/checksums.txt"
         echo "Downloading wfctl ${VERSION} for ${OS}/${ARCH}..."
+        auth_args=()
+        if [ -n "${GH_TOKEN}" ]; then
+          auth_args=(-H "Authorization: token ${GH_TOKEN}")
+        fi
+        curl -fsSL "${auth_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
+        expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' /tmp/wfctl-checksums.txt)"
+        if [ -z "${expected_sha}" ]; then
+          echo "::error::checksums.txt does not list ${ASSET} for ${VERSION}" >&2
+          exit 1
+        fi
+        curl -fsSL "${auth_args[@]}" "${URL}" -o /tmp/wfctl
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual_sha="$(sha256sum /tmp/wfctl | awk '{print $1}')"
+        else
+          actual_sha="$(shasum -a 256 /tmp/wfctl | awk '{print $1}')"
+        fi
+        if [ "${actual_sha}" != "${expected_sha}" ]; then
+          echo "::error::wfctl checksum mismatch for ${ASSET}: expected ${expected_sha}, got ${actual_sha}" >&2
+          exit 1
+        fi
+        echo "Verified wfctl ${VERSION} ${ASSET} sha256:${actual_sha}"
         if [ "${{ steps.install.outputs.use_sudo }}" = "true" ]; then
-          curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" -o /tmp/wfctl
           sudo mv /tmp/wfctl "${INSTALL_DIR}/wfctl"
           sudo chmod +x "${INSTALL_DIR}/wfctl"
         else
-          curl -sL -H "Authorization: token ${GH_TOKEN}" "${URL}" -o "${INSTALL_DIR}/wfctl"
+          mv /tmp/wfctl "${INSTALL_DIR}/wfctl"
           chmod +x "${INSTALL_DIR}/wfctl"
         fi
     - name: Add install directory to PATH
