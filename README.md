@@ -69,6 +69,13 @@ The action will download `wfctl` directly into the specified directory, `chmod +
 
 Downloaded binaries are cached using `actions/cache@v5` keyed on version, OS, and architecture. Subsequent runs with the same version skip the download. The cache path reflects the resolved install directory.
 
+## Verification
+
+When `version: latest` is used, the action resolves and prints the concrete
+Workflow release tag before downloading. Every download also fetches the
+release `checksums.txt` file and verifies the selected `wfctl-${os}-${arch}`
+asset before installing it.
+
 ## License
 
 MIT
