@@ -17,6 +17,18 @@ inputs:
     description: 'Maximum time to allow an existing wfctl binary to self-update before falling back to release download.'
     required: false
     default: '300'
+  skip-update:
+    description: 'Set to true to skip wfctl update attempts when an existing binary does not match the requested version.'
+    required: false
+    default: 'false'
+  download-timeout-seconds:
+    description: 'Maximum time for each curl download request.'
+    required: false
+    default: '60'
+  download-connect-timeout-seconds:
+    description: 'Maximum time for curl to establish a connection.'
+    required: false
+    default: '30'
 runs:
   using: 'composite'
   steps:
@@ -85,6 +97,7 @@ runs:
       env:
         TARGET_VERSION: ${{ steps.version.outputs.version }}
         UPDATE_TIMEOUT_SECONDS: ${{ inputs.update-timeout-seconds }}
+        SKIP_UPDATE: ${{ inputs.skip-update }}
       run: |
         set -euo pipefail
 
@@ -110,6 +123,12 @@ runs:
         if [ "${existing_version}" = "${TARGET_VERSION}" ]; then
           echo "Using existing wfctl ${TARGET_VERSION} from ${existing_wfctl}."
           echo "use_existing=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "${SKIP_UPDATE}" = "true" ]; then
+          echo "Found wfctl ${existing_version:-unknown} at ${existing_wfctl}; skipping wfctl update for pinned ${TARGET_VERSION}."
+          echo "use_existing=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -139,6 +158,8 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
+        CURL_CONNECT_TIMEOUT_SECONDS: ${{ inputs.download-connect-timeout-seconds }}
+        CURL_MAX_TIME_SECONDS: ${{ inputs.download-timeout-seconds }}
       run: |
         set -euo pipefail
         VERSION="${{ steps.version.outputs.version }}"
@@ -155,13 +176,21 @@ runs:
         if [ -n "${GH_TOKEN}" ]; then
           auth_args=(-H "Authorization: token ${GH_TOKEN}")
         fi
-        curl -fsSL "${auth_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
+        curl_args=(
+          --fail
+          --show-error
+          --silent
+          --location
+          --connect-timeout "${CURL_CONNECT_TIMEOUT_SECONDS}"
+          --max-time "${CURL_MAX_TIME_SECONDS}"
+        )
+        curl "${curl_args[@]}" "${auth_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
         expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' /tmp/wfctl-checksums.txt)"
         if [ -z "${expected_sha}" ]; then
           echo "::error::checksums.txt does not list ${ASSET} for ${VERSION}" >&2
           exit 1
         fi
-        curl -fsSL "${auth_args[@]}" "${URL}" -o /tmp/wfctl
+        curl "${curl_args[@]}" "${auth_args[@]}" "${URL}" -o /tmp/wfctl
         if command -v sha256sum >/dev/null 2>&1; then
           actual_sha="$(sha256sum /tmp/wfctl | awk '{print $1}')"
         else
