@@ -13,6 +13,10 @@ inputs:
     description: 'Directory to install wfctl into. When set, sudo is not used and the directory is appended to GITHUB_PATH. Defaults to /usr/local/bin (existing behavior).'
     required: false
     default: ''
+  update-timeout-seconds:
+    description: 'Maximum time to allow an existing wfctl binary to self-update before falling back to release download.'
+    required: false
+    default: '300'
 runs:
   using: 'composite'
   steps:
@@ -75,14 +79,63 @@ runs:
         CACHE_DIR="${CACHE_ROOT}/${{ steps.version.outputs.version }}/${{ steps.platform.outputs.os }}-${{ steps.platform.outputs.arch }}"
         echo "dir=${CACHE_DIR}" >> "$GITHUB_OUTPUT"
         echo "bin=${CACHE_DIR}/wfctl" >> "$GITHUB_OUTPUT"
+    - name: Reuse or update existing wfctl
+      id: existing
+      shell: bash
+      env:
+        TARGET_VERSION: ${{ steps.version.outputs.version }}
+        UPDATE_TIMEOUT_SECONDS: ${{ inputs.update-timeout-seconds }}
+      run: |
+        set -euo pipefail
+
+        current_version() {
+          WFCTL_NO_UPDATE_CHECK=1 wfctl version 2>/dev/null | tr -d '[:space:]'
+        }
+
+        run_wfctl_update() {
+          if command -v timeout >/dev/null 2>&1; then
+            timeout "${UPDATE_TIMEOUT_SECONDS}s" env WFCTL_NO_UPDATE_CHECK=1 wfctl update
+          else
+            WFCTL_NO_UPDATE_CHECK=1 wfctl update
+          fi
+        }
+
+        if ! existing_wfctl="$(command -v wfctl 2>/dev/null)"; then
+          echo "No existing wfctl found on PATH; downloading ${TARGET_VERSION}."
+          echo "use_existing=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        existing_version="$(current_version || true)"
+        if [ "${existing_version}" = "${TARGET_VERSION}" ]; then
+          echo "Using existing wfctl ${TARGET_VERSION} from ${existing_wfctl}."
+          echo "use_existing=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Found wfctl ${existing_version:-unknown} at ${existing_wfctl}; attempting wfctl update for ${TARGET_VERSION}."
+        if run_wfctl_update; then
+          hash -r
+          updated_version="$(current_version || true)"
+          if [ "${updated_version}" = "${TARGET_VERSION}" ]; then
+            echo "Updated existing wfctl to ${TARGET_VERSION}."
+            echo "use_existing=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "wfctl update produced ${updated_version:-unknown}; expected ${TARGET_VERSION}. Falling back to release download."
+        else
+          echo "wfctl update failed or timed out. Falling back to release download."
+        fi
+        echo "use_existing=false" >> "$GITHUB_OUTPUT"
     - name: Cache wfctl
+      if: steps.existing.outputs.use_existing != 'true'
       uses: actions/cache@v5
       id: cache
       with:
         path: ${{ steps.cache-path.outputs.dir }}
         key: wfctl-${{ steps.version.outputs.version }}-${{ steps.platform.outputs.os }}-${{ steps.platform.outputs.arch }}
     - name: Download wfctl
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: steps.existing.outputs.use_existing != 'true' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
@@ -123,6 +176,7 @@ runs:
         mv /tmp/wfctl "${CACHE_BIN}"
         chmod +x "${CACHE_BIN}"
     - name: Install wfctl
+      if: steps.existing.outputs.use_existing != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -134,7 +188,7 @@ runs:
           install -m 0755 "${CACHE_BIN}" "${INSTALL_DIR}/wfctl"
         fi
     - name: Add install directory to PATH
-      if: steps.install.outputs.use_sudo == 'false'
+      if: steps.existing.outputs.use_existing != 'true' && steps.install.outputs.use_sudo == 'false'
       shell: bash
       run: echo "${{ steps.install.outputs.install_dir }}" >> "$GITHUB_PATH"
     - name: Verify installation
