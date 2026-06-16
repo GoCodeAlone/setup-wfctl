@@ -50,6 +50,9 @@ jobs:
 | `token`       | GitHub token for downloading releases                                                                          | No       | `${{ github.token }}`  |
 | `install-dir` | Directory to install `wfctl` into. When set, `sudo` is **not** used and the directory is added to `PATH`. Defaults to `/usr/local/bin` (existing behaviour). | No       | `` (uses `/usr/local/bin`) |
 | `update-timeout-seconds` | Maximum time to allow an existing `wfctl` binary to self-update before falling back to release download. | No | `300` |
+| `skip-update` | Set to `true` to skip `wfctl update` attempts when an existing binary does not match the requested version. | No | `false` |
+| `download-timeout-seconds` | Maximum time for each release download request. | No | `60` |
+| `download-connect-timeout-seconds` | Maximum time to establish each release download connection. | No | `30` |
 
 ## Self-hosted runners (no sudo)
 
@@ -78,12 +81,17 @@ restore and download. If it does not match, the action attempts a bounded
 `wfctl update`; when the updated binary still does not match the requested
 version, the action falls back to the verified release download path.
 
+Set `skip-update: true` for pinned workflows that must not mutate the runner's
+existing `wfctl` binary. In that mode, a mismatched existing binary is ignored
+and the action uses the checksum-verified release download/cache path instead.
+
 ## Verification
 
 When `version: latest` is used, the action resolves and prints the concrete
 Workflow release tag before downloading. Every download also fetches the
 release `checksums.txt` file and verifies the selected `wfctl-${os}-${arch}`
-asset before installing it.
+asset before installing it. Download requests use bounded curl connection and
+total request timeouts.
 
 ## License
 
