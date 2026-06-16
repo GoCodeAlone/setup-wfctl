@@ -49,6 +49,7 @@ jobs:
 | `version`     | wfctl version to install (e.g. `v0.3.51`, `latest`)                                                           | No       | `latest`               |
 | `token`       | GitHub token for downloading releases                                                                          | No       | `${{ github.token }}`  |
 | `install-dir` | Directory to install `wfctl` into. When set, `sudo` is **not** used and the directory is added to `PATH`. Defaults to `/usr/local/bin` (existing behaviour). | No       | `` (uses `/usr/local/bin`) |
+| `update-timeout-seconds` | Maximum time to allow an existing `wfctl` binary to self-update before falling back to release download. | No | `300` |
 
 ## Self-hosted runners (no sudo)
 
@@ -68,6 +69,14 @@ The action will download `wfctl` directly into the specified directory, `chmod +
 ## Caching
 
 Downloaded binaries are cached using `actions/cache@v5` keyed on version, OS, and architecture. Subsequent runs with the same version skip the download. The cache path reflects the resolved install directory.
+
+## Existing wfctl binaries
+
+When a runner already has `wfctl` on `PATH`, the action first checks its version.
+If it already matches the requested version, the action reuses it and skips cache
+restore and download. If it does not match, the action attempts a bounded
+`wfctl update`; when the updated binary still does not match the requested
+version, the action falls back to the verified release download path.
 
 ## Verification
 
