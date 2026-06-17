@@ -85,6 +85,11 @@ Set `skip-update: true` for pinned workflows that must not mutate the runner's
 existing `wfctl` binary. In that mode, a mismatched existing binary is ignored
 and the action uses the checksum-verified release download/cache path instead.
 
+When `install-dir` is set and the existing `wfctl` on `PATH` lives elsewhere,
+the action also skips `wfctl update` for that unrelated binary. This keeps
+self-hosted workflows from attempting to mutate a global or unwritable `wfctl`
+before installing the requested version into the workflow-owned directory.
+
 ## Verification
 
 When `version: latest` is used, the action resolves and prints the concrete
