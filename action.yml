@@ -98,6 +98,8 @@ runs:
         TARGET_VERSION: ${{ steps.version.outputs.version }}
         UPDATE_TIMEOUT_SECONDS: ${{ inputs.update-timeout-seconds }}
         SKIP_UPDATE: ${{ inputs.skip-update }}
+        REQUESTED_INSTALL_DIR: ${{ inputs.install-dir }}
+        RESOLVED_INSTALL_DIR: ${{ steps.install.outputs.install_dir }}
       run: |
         set -euo pipefail
 
@@ -128,6 +130,22 @@ runs:
 
         if [ "${SKIP_UPDATE}" = "true" ]; then
           echo "Found wfctl ${existing_version:-unknown} at ${existing_wfctl}; skipping wfctl update for pinned ${TARGET_VERSION}."
+          echo "use_existing=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ -n "${REQUESTED_INSTALL_DIR}" ]; then
+          existing_dir="$(cd "$(dirname "${existing_wfctl}")" && pwd -P)"
+          install_dir="$(mkdir -p "${RESOLVED_INSTALL_DIR}" && cd "${RESOLVED_INSTALL_DIR}" && pwd -P)"
+          if [ "${existing_dir}" != "${install_dir}" ]; then
+            echo "Found wfctl ${existing_version:-unknown} at ${existing_wfctl}; requested install-dir is ${install_dir}, so skipping update of unrelated PATH binary."
+            echo "use_existing=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        fi
+
+        if [ ! -w "${existing_wfctl}" ] || [ ! -w "$(dirname "${existing_wfctl}")" ]; then
+          echo "Found wfctl ${existing_version:-unknown} at ${existing_wfctl}, but it is not writable by this runner; using release download for ${TARGET_VERSION}."
           echo "use_existing=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
