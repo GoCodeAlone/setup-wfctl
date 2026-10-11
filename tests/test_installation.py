@@ -39,6 +39,7 @@ class InstallationTests(unittest.TestCase):
             "INSTALL_DIR": str(self.installed),
             "USE_EXISTING": "false",
             "GITHUB_PATH": str(self.root / "github-path"),
+            "GITHUB_OUTPUT": str(self.root / "github-output"),
         }
 
     def bin(self, directory, version):
@@ -46,13 +47,15 @@ class InstallationTests(unittest.TestCase):
         binary.write_text(f"#!/bin/sh\n[ \"$1\" = version ] || exit 99\nprintf '%s\\n' '{version}'\n")
         binary.chmod(0o755)
 
-    def run_step(self, name):
+    def run_step(self, name, install_dir=None):
         script = step_script(name).replace(
             "${{ steps.install.outputs.install_dir }}", str(self.installed)
+        ).replace(
+            "${{ inputs.install-dir }}", install_dir if install_dir is not None else str(self.installed)
         )
         return subprocess.run(
             ["/bin/bash", "-c", script], env=self.env,
-            capture_output=True, text=True, timeout=5,
+            cwd=self.root, capture_output=True, text=True, timeout=5,
         )
 
     def test_installed_binary_wins_over_shadow_in_verification(self):
@@ -95,6 +98,28 @@ class InstallationTests(unittest.TestCase):
         self.env["PATH"] = installed_path + os.pathsep + self.env["PATH"]
         result = subprocess.run(
             ["/bin/bash", "-c", "wfctl version"], env=self.env,
+            capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "v0.60.6")
+
+    def test_relative_install_directory_survives_later_working_directory(self):
+        result = self.run_step("Resolve install directory", install_dir="tools/wfctl-bin")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        outputs = dict(line.split("=", 1) for line in Path(self.env["GITHUB_OUTPUT"]).read_text().splitlines())
+        self.installed = Path(outputs["install_dir"])
+        self.assertTrue(self.installed.is_absolute())
+        self.bin(self.installed, "v0.60.6")
+        self.env["INSTALL_DIR"] = str(self.installed)
+        result = self.run_step("Verify installation")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_step("Add install directory to PATH")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.env["PATH"] = Path(self.env["GITHUB_PATH"]).read_text().strip() + os.pathsep + self.env["PATH"]
+        other = self.root / "other-working-directory"
+        other.mkdir()
+        result = subprocess.run(
+            ["/bin/bash", "-c", "wfctl version"], cwd=other, env=self.env,
             capture_output=True, text=True, timeout=5,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -74,9 +74,11 @@ runs:
       id: install
       shell: bash
       run: |
+        set -euo pipefail
         if [ -n "${{ inputs.install-dir }}" ]; then
           INSTALL_DIR="${{ inputs.install-dir }}"
           mkdir -p "${INSTALL_DIR}"
+          INSTALL_DIR="$(cd "${INSTALL_DIR}" && pwd -P)"
           echo "install_dir=${INSTALL_DIR}" >> "$GITHUB_OUTPUT"
           echo "use_sudo=false" >> "$GITHUB_OUTPUT"
         else
