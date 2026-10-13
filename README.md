@@ -98,6 +98,15 @@ release `checksums.txt` file and verifies the selected `wfctl-${os}-${arch}`
 asset before installing it. Download requests use bounded curl connection and
 total request timeouts.
 
+After a new installation, the action adds its directory to `GITHUB_PATH`,
+including the default `/usr/local/bin`, so a pre-existing binary earlier on
+`PATH` cannot shadow it in later steps. Verification invokes the installed
+binary by its absolute path and requires the resolved version to match.
+Custom install directories are normalized to absolute paths so later steps can
+change working directories. Reused binaries receive the same version check.
+
+Run the offline shell regression tests with `python3 -m unittest discover -s tests`.
+
 ## License
 
 MIT

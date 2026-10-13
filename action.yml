@@ -74,9 +74,11 @@ runs:
       id: install
       shell: bash
       run: |
+        set -euo pipefail
         if [ -n "${{ inputs.install-dir }}" ]; then
           INSTALL_DIR="${{ inputs.install-dir }}"
           mkdir -p "${INSTALL_DIR}"
+          INSTALL_DIR="$(cd "${INSTALL_DIR}" && pwd -P)"
           echo "install_dir=${INSTALL_DIR}" >> "$GITHUB_OUTPUT"
           echo "use_sudo=false" >> "$GITHUB_OUTPUT"
         else
@@ -235,9 +237,25 @@ runs:
           install -m 0755 "${CACHE_BIN}" "${INSTALL_DIR}/wfctl"
         fi
     - name: Add install directory to PATH
-      if: steps.existing.outputs.use_existing != 'true' && steps.install.outputs.use_sudo == 'false'
+      if: steps.existing.outputs.use_existing != 'true'
       shell: bash
       run: echo "${{ steps.install.outputs.install_dir }}" >> "$GITHUB_PATH"
     - name: Verify installation
       shell: bash
-      run: wfctl version
+      env:
+        TARGET_VERSION: ${{ steps.version.outputs.version }}
+        INSTALL_DIR: ${{ steps.install.outputs.install_dir }}
+        USE_EXISTING: ${{ steps.existing.outputs.use_existing }}
+      run: |
+        set -euo pipefail
+        if [ "${USE_EXISTING}" = "true" ]; then
+          WFCTL_BIN="$(command -v wfctl)"
+        else
+          WFCTL_BIN="${INSTALL_DIR}/wfctl"
+        fi
+        actual_version="$(WFCTL_NO_UPDATE_CHECK=1 "${WFCTL_BIN}" version | tr -d '[:space:]')"
+        if [ "${actual_version}" != "${TARGET_VERSION}" ]; then
+          echo "::error::Expected wfctl ${TARGET_VERSION} from ${WFCTL_BIN}, got ${actual_version}" >&2
+          exit 1
+        fi
+        echo "Verified wfctl ${actual_version} from ${WFCTL_BIN}"
