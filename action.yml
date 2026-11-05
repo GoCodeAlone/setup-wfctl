@@ -40,11 +40,11 @@ runs:
       run: |
         set -euo pipefail
         if [ "${{ inputs.version }}" = "latest" ]; then
-          auth_args=()
+          curl_args=(-fsSL)
           if [ -n "${GH_TOKEN}" ]; then
-            auth_args=(-H "Authorization: Bearer ${GH_TOKEN}")
+            curl_args+=(-H "Authorization: Bearer ${GH_TOKEN}")
           fi
-          VERSION=$(curl -fsSL "${auth_args[@]}" \
+          VERSION=$(curl "${curl_args[@]}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/GoCodeAlone/workflow/releases/latest |
             sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
@@ -192,10 +192,6 @@ runs:
         URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}"
         CHECKSUMS_URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/checksums.txt"
         echo "Downloading wfctl ${VERSION} for ${OS}/${ARCH}..."
-        auth_args=()
-        if [ -n "${GH_TOKEN}" ]; then
-          auth_args=(-H "Authorization: token ${GH_TOKEN}")
-        fi
         curl_args=(
           --fail
           --show-error
@@ -204,13 +200,16 @@ runs:
           --connect-timeout "${CURL_CONNECT_TIMEOUT_SECONDS}"
           --max-time "${CURL_MAX_TIME_SECONDS}"
         )
-        curl "${curl_args[@]}" "${auth_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
+        if [ -n "${GH_TOKEN}" ]; then
+          curl_args+=(-H "Authorization: token ${GH_TOKEN}")
+        fi
+        curl "${curl_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
         expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' /tmp/wfctl-checksums.txt)"
         if [ -z "${expected_sha}" ]; then
           echo "::error::checksums.txt does not list ${ASSET} for ${VERSION}" >&2
           exit 1
         fi
-        curl "${curl_args[@]}" "${auth_args[@]}" "${URL}" -o /tmp/wfctl
+        curl "${curl_args[@]}" "${URL}" -o /tmp/wfctl
         if command -v sha256sum >/dev/null 2>&1; then
           actual_sha="$(sha256sum /tmp/wfctl | awk '{print $1}')"
         else
@@ -224,6 +223,55 @@ runs:
         mkdir -p "${CACHE_DIR}"
         mv /tmp/wfctl "${CACHE_BIN}"
         chmod +x "${CACHE_BIN}"
+    - name: Verify cached wfctl
+      if: steps.existing.outputs.use_existing != 'true' && steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        VERSION: ${{ steps.version.outputs.version }}
+        OS: ${{ steps.platform.outputs.os }}
+        ARCH: ${{ steps.platform.outputs.arch }}
+        CACHE_BIN: ${{ steps.cache-path.outputs.bin }}
+        CURL_CONNECT_TIMEOUT_SECONDS: ${{ inputs.download-connect-timeout-seconds }}
+        CURL_MAX_TIME_SECONDS: ${{ inputs.download-timeout-seconds }}
+      run: |
+        set -euo pipefail
+        if [ ! -f "${CACHE_BIN}" ] || [ ! -s "${CACHE_BIN}" ] || [ -L "${CACHE_BIN}" ]; then
+          echo "::error::Cached wfctl must be a nonempty regular file, not a symlink" >&2
+          exit 1
+        fi
+        ASSET="wfctl-${OS}-${ARCH}"
+        CHECKSUMS_URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/checksums.txt"
+        # The expected checksum must come from the selected release, never the restored cache.
+        CHECKSUMS_FILE="$(mktemp "${RUNNER_TEMP}/setup-wfctl-checksums.XXXXXX")"
+        trap 'rm -f -- "${CHECKSUMS_FILE}"' EXIT
+        curl_args=(
+          --fail
+          --show-error
+          --silent
+          --location
+          --connect-timeout "${CURL_CONNECT_TIMEOUT_SECONDS}"
+          --max-time "${CURL_MAX_TIME_SECONDS}"
+        )
+        if [ -n "${GH_TOKEN}" ]; then
+          curl_args+=(-H "Authorization: token ${GH_TOKEN}")
+        fi
+        curl "${curl_args[@]}" "${CHECKSUMS_URL}" -o "${CHECKSUMS_FILE}"
+        expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' "${CHECKSUMS_FILE}")"
+        if [[ ! "${expected_sha}" =~ ^[[:xdigit:]]{64}$ ]]; then
+          echo "::error::checksums.txt must contain one SHA256 for ${ASSET} in ${VERSION}" >&2
+          exit 1
+        fi
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual_sha="$(sha256sum "${CACHE_BIN}" | awk '{print $1}')"
+        else
+          actual_sha="$(shasum -a 256 "${CACHE_BIN}" | awk '{print $1}')"
+        fi
+        if [ "${actual_sha}" != "${expected_sha}" ]; then
+          echo "::error::Cached wfctl checksum mismatch for ${ASSET}: expected ${expected_sha}, got ${actual_sha}" >&2
+          exit 1
+        fi
+        echo "Verified cached wfctl ${VERSION} ${ASSET} sha256:${actual_sha}"
     - name: Install wfctl
       if: steps.existing.outputs.use_existing != 'true'
       shell: bash
