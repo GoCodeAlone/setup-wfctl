@@ -40,11 +40,11 @@ runs:
       run: |
         set -euo pipefail
         if [ "${{ inputs.version }}" = "latest" ]; then
-          auth_args=()
+          curl_args=(-fsSL)
           if [ -n "${GH_TOKEN}" ]; then
-            auth_args=(-H "Authorization: Bearer ${GH_TOKEN}")
+            curl_args+=(-H "Authorization: Bearer ${GH_TOKEN}")
           fi
-          VERSION=$(curl -fsSL "${auth_args[@]}" \
+          VERSION=$(curl "${curl_args[@]}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/GoCodeAlone/workflow/releases/latest |
             sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
@@ -192,10 +192,6 @@ runs:
         URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/${ASSET}"
         CHECKSUMS_URL="https://github.com/GoCodeAlone/workflow/releases/download/${VERSION}/checksums.txt"
         echo "Downloading wfctl ${VERSION} for ${OS}/${ARCH}..."
-        auth_args=()
-        if [ -n "${GH_TOKEN}" ]; then
-          auth_args=(-H "Authorization: token ${GH_TOKEN}")
-        fi
         curl_args=(
           --fail
           --show-error
@@ -204,13 +200,16 @@ runs:
           --connect-timeout "${CURL_CONNECT_TIMEOUT_SECONDS}"
           --max-time "${CURL_MAX_TIME_SECONDS}"
         )
-        curl "${curl_args[@]}" "${auth_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
+        if [ -n "${GH_TOKEN}" ]; then
+          curl_args+=(-H "Authorization: token ${GH_TOKEN}")
+        fi
+        curl "${curl_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
         expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' /tmp/wfctl-checksums.txt)"
         if [ -z "${expected_sha}" ]; then
           echo "::error::checksums.txt does not list ${ASSET} for ${VERSION}" >&2
           exit 1
         fi
-        curl "${curl_args[@]}" "${auth_args[@]}" "${URL}" -o /tmp/wfctl
+        curl "${curl_args[@]}" "${URL}" -o /tmp/wfctl
         if command -v sha256sum >/dev/null 2>&1; then
           actual_sha="$(sha256sum /tmp/wfctl | awk '{print $1}')"
         else
