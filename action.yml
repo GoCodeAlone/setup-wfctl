@@ -113,7 +113,8 @@ runs:
           if command -v timeout >/dev/null 2>&1; then
             timeout "${UPDATE_TIMEOUT_SECONDS}s" env WFCTL_NO_UPDATE_CHECK=1 wfctl update
           else
-            WFCTL_NO_UPDATE_CHECK=1 wfctl update
+            echo "No timeout command available; skipping wfctl update to avoid an unbounded update."
+            return 1
           fi
         }
 

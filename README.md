@@ -80,6 +80,8 @@ If it already matches the requested version, the action reuses it and skips cach
 restore and download. If it does not match, the action attempts a bounded
 `wfctl update`; when the updated binary still does not match the requested
 version, the action falls back to the verified release download path.
+If the runner has no `timeout` command, the action skips self-update and uses
+the release download/cache path rather than running an unbounded update.
 
 Set `skip-update: true` for pinned workflows that must not mutate the runner's
 existing `wfctl` binary. In that mode, a mismatched existing binary is ignored
