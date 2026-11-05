@@ -1,0 +1,93 @@
+name: Hosted input contract
+
+# Qualification of an immutable candidate, not a release or cache-service test.
+on:
+  push:
+    branches: [test/hosted-input-contract-20261105-6b37f352]
+    paths:
+      - .github/workflows/hosted-input-contract.yml
+      - tests/hosted_input_fixture.py
+      - tests/test_hosted_input_fixture.py
+
+permissions:
+  contents: read
+
+jobs:
+  inputs:
+    if: github.server_url == 'https://github.com'
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Check out qualification fixtures
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare isolated transport and existing-binary fixtures
+        id: fixtures
+        shell: bash
+        run: python3 -I -B tests/hosted_input_fixture.py init
+
+      - name: Verify fixture command resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(command -v curl)" = "${HOSTED_INPUT_ROOT}/bin/curl"
+          test "$(command -v wfctl)" = "${HOSTED_INPUT_ROOT}/bin/wfctl"
+          /bin/bash --version | head -n 1
+
+      - name: Resolve omitted version and token through the real action
+        id: defaults
+        continue-on-error: true
+        uses: GoCodeAlone/setup-wfctl@6b37f3522cc7a1ab88849c87b208219bd49e3cc4
+        env:
+          INPUT_MODE: default
+          EXPECTED_DEFAULT_TOKEN: ${{ github.token }}
+        with:
+          install-dir: ${{ env.HOSTED_INPUT_ROOT }}/install
+          skip-update: 'true'
+
+      - name: Assert default-input outcome and boundary events
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ steps.defaults.outcome }}
+        run: python3 -I -B tests/hosted_input_fixture.py verify default "$ACTION_OUTCOME"
+
+      - name: Pass an explicitly empty token through the real action
+        id: empty
+        continue-on-error: true
+        uses: GoCodeAlone/setup-wfctl@6b37f3522cc7a1ab88849c87b208219bd49e3cc4
+        env:
+          INPUT_MODE: empty
+        with:
+          token: ''
+          install-dir: ${{ env.HOSTED_INPUT_ROOT }}/install
+          skip-update: 'true'
+
+      - name: Assert empty-input outcome and boundary events
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ steps.empty.outcome }}
+        run: python3 -I -B tests/hosted_input_fixture.py verify empty "$ACTION_OUTCOME"
+
+      - name: Deliberately reject the correctly defaulted header
+        id: rejected
+        continue-on-error: true
+        uses: GoCodeAlone/setup-wfctl@6b37f3522cc7a1ab88849c87b208219bd49e3cc4
+        env:
+          INPUT_MODE: rejected
+          EXPECTED_DEFAULT_TOKEN: ${{ github.token }}
+        with:
+          install-dir: ${{ env.HOSTED_INPUT_ROOT }}/install
+          skip-update: 'true'
+
+      - name: Require the specific negative-control failure
+        shell: bash
+        env:
+          ACTION_OUTCOME: ${{ steps.rejected.outcome }}
+        run: python3 -I -B tests/hosted_input_fixture.py verify rejected "$ACTION_OUTCOME"
+
+      - name: Remove only the owned fixture directory
+        if: always() && steps.fixtures.outcome == 'success'
+        shell: bash
+        run: python3 -I -B tests/hosted_input_fixture.py cleanup
