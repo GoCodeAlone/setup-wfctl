@@ -172,8 +172,10 @@ else:
                     self.assertEqual(destination.parent, self.runner_temp, self.diagnostic)
                     self.assertTrue(destination.name.startswith("setup-wfctl-checksums."), self.diagnostic)
                 else:
-                    filename = "wfctl-checksums.txt" if route == "checksums" else "wfctl"
-                    self.assertEqual(destination, self.legacy_temp / filename, self.diagnostic)
+                    filename = "checksums.txt" if route == "checksums" else "wfctl"
+                    self.assertEqual(destination.name, filename, self.diagnostic)
+                    self.assertEqual(destination.parent.parent, self.runner_temp, self.diagnostic)
+                    self.assertTrue(destination.parent.name.startswith("setup-wfctl-download."), self.diagnostic)
             self.assertCountEqual(headers, expected_headers, self.diagnostic)
 
     def assert_latest(self, token):

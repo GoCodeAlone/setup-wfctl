@@ -96,7 +96,9 @@ When `version: latest` is used, the action resolves and prints the concrete
 Workflow release tag before downloading. Every download also fetches the
 release `checksums.txt` file and verifies the selected `wfctl-${os}-${arch}`
 asset before installing it. Download requests use bounded curl connection and
-total request timeouts.
+total request timeouts. Each download uses a private directory under `RUNNER_TEMP`
+to keep concurrent invocations and pre-existing temporary files separate. The
+directory is removed on ordinary step exit, including download or checksum failure.
 
 After a new installation, the action adds its directory to `GITHUB_PATH`,
 including the default `/usr/local/bin`, so a pre-existing binary earlier on

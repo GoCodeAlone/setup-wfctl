@@ -203,17 +203,21 @@ runs:
         if [ -n "${GH_TOKEN}" ]; then
           curl_args+=(-H "Authorization: token ${GH_TOKEN}")
         fi
-        curl "${curl_args[@]}" "${CHECKSUMS_URL}" -o /tmp/wfctl-checksums.txt
-        expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' /tmp/wfctl-checksums.txt)"
+        DOWNLOAD_DIR="$(mktemp -d "${RUNNER_TEMP}/setup-wfctl-download.XXXXXX")"
+        trap 'rm -rf -- "${DOWNLOAD_DIR}"' EXIT
+        CHECKSUMS_FILE="${DOWNLOAD_DIR}/checksums.txt"
+        DOWNLOAD_BIN="${DOWNLOAD_DIR}/wfctl"
+        curl "${curl_args[@]}" "${CHECKSUMS_URL}" -o "${CHECKSUMS_FILE}"
+        expected_sha="$(awk -v asset="${ASSET}" '$2 == asset {print $1}' "${CHECKSUMS_FILE}")"
         if [ -z "${expected_sha}" ]; then
           echo "::error::checksums.txt does not list ${ASSET} for ${VERSION}" >&2
           exit 1
         fi
-        curl "${curl_args[@]}" "${URL}" -o /tmp/wfctl
+        curl "${curl_args[@]}" "${URL}" -o "${DOWNLOAD_BIN}"
         if command -v sha256sum >/dev/null 2>&1; then
-          actual_sha="$(sha256sum /tmp/wfctl | awk '{print $1}')"
+          actual_sha="$(sha256sum "${DOWNLOAD_BIN}" | awk '{print $1}')"
         else
-          actual_sha="$(shasum -a 256 /tmp/wfctl | awk '{print $1}')"
+          actual_sha="$(shasum -a 256 "${DOWNLOAD_BIN}" | awk '{print $1}')"
         fi
         if [ "${actual_sha}" != "${expected_sha}" ]; then
           echo "::error::wfctl checksum mismatch for ${ASSET}: expected ${expected_sha}, got ${actual_sha}" >&2
@@ -221,7 +225,7 @@ runs:
         fi
         echo "Verified wfctl ${VERSION} ${ASSET} sha256:${actual_sha}"
         mkdir -p "${CACHE_DIR}"
-        mv /tmp/wfctl "${CACHE_BIN}"
+        mv "${DOWNLOAD_BIN}" "${CACHE_BIN}"
         chmod +x "${CACHE_BIN}"
     - name: Verify cached wfctl
       if: steps.existing.outputs.use_existing != 'true' && steps.cache.outputs.cache-hit == 'true'
