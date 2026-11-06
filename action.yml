@@ -22,11 +22,11 @@ inputs:
     required: false
     default: 'false'
   download-timeout-seconds:
-    description: 'Maximum time for each curl download request.'
+    description: 'Maximum time for each curl request, including latest-version lookup.'
     required: false
     default: '60'
   download-connect-timeout-seconds:
-    description: 'Maximum time for curl to establish a connection.'
+    description: 'Maximum time for curl to establish a connection, including latest-version lookup.'
     required: false
     default: '30'
 runs:
@@ -37,10 +37,16 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
+        CURL_CONNECT_TIMEOUT_SECONDS: ${{ inputs.download-connect-timeout-seconds }}
+        CURL_MAX_TIME_SECONDS: ${{ inputs.download-timeout-seconds }}
       run: |
         set -euo pipefail
         if [ "${{ inputs.version }}" = "latest" ]; then
-          curl_args=(-fsSL)
+          curl_args=(
+            -fsSL
+            --connect-timeout "${CURL_CONNECT_TIMEOUT_SECONDS}"
+            --max-time "${CURL_MAX_TIME_SECONDS}"
+          )
           if [ -n "${GH_TOKEN}" ]; then
             curl_args+=(-H "Authorization: Bearer ${GH_TOKEN}")
           fi

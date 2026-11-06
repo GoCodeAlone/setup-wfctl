@@ -51,8 +51,8 @@ jobs:
 | `install-dir` | Directory to install `wfctl` into. When set, `sudo` is **not** used and the directory is added to `PATH`. Defaults to `/usr/local/bin` (existing behaviour). | No       | `` (uses `/usr/local/bin`) |
 | `update-timeout-seconds` | Maximum time to allow an existing `wfctl` binary to self-update before falling back to release download. | No | `300` |
 | `skip-update` | Set to `true` to skip `wfctl update` attempts when an existing binary does not match the requested version. | No | `false` |
-| `download-timeout-seconds` | Maximum time for each release download request. | No | `60` |
-| `download-connect-timeout-seconds` | Maximum time to establish each release download connection. | No | `30` |
+| `download-timeout-seconds` | Maximum time for each release request, including latest-version lookup. | No | `60` |
+| `download-connect-timeout-seconds` | Maximum time to establish each release connection, including latest-version lookup. | No | `30` |
 
 ## Self-hosted runners (no sudo)
 
@@ -93,7 +93,11 @@ before installing the requested version into the workflow-owned directory.
 ## Verification
 
 When `version: latest` is used, the action resolves and prints the concrete
-Workflow release tag before downloading. Every download also fetches the
+Workflow release tag before downloading. The latest-version lookup uses the same
+`download-connect-timeout-seconds` and `download-timeout-seconds` limits as release
+downloads. A failed or timed-out lookup stops the action before a version is
+selected. Pinned versions do not make this lookup request. Every download also
+fetches the
 release `checksums.txt` file and verifies the selected `wfctl-${os}-${arch}`
 asset before installing it. Download requests use bounded curl connection and
 total request timeouts. Each download uses a private directory under `RUNNER_TEMP`

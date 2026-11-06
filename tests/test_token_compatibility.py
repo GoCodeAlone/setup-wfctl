@@ -157,7 +157,7 @@ else:
                 expected_headers.append("Authorization: " + scheme + " " + token)
             if route == "latest":
                 expected_headers.append("Accept: application/vnd.github+json")
-                self.assertEqual(rest, ["-fsSL", LATEST_URL], self.diagnostic)
+                self.assertEqual(rest, ["-fsSL", "--connect-timeout", "1", "--max-time", "2", LATEST_URL], self.diagnostic)
             else:
                 self.assertEqual(rest[:8], [
                     "--fail", "--show-error", "--silent", "--location",
