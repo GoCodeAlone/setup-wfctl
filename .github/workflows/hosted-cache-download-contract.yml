@@ -1,0 +1,100 @@
+{
+  "name": "Hosted cache and download contract (qualification only)",
+  "on": {
+    "push": {
+      "branches": [
+        "test/hosted-cache-download-contract-6b37f352"
+      ],
+      "paths": [
+        ".github/workflows/hosted-cache-download-contract.yml",
+        "tests/hosted_cache_download_fixture.py",
+        "tests/test_hosted_cache_download_fixture.py"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "qualification": {
+      "if": "github.server_url == 'https://github.com'",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "strategy": {
+        "fail-fast": false,
+        "max-parallel": 1,
+        "matrix": {
+          "case": [
+            "valid-hit",
+            "tampered-hit",
+            "miss",
+            "real-release"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Check out reviewed fixture source",
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Prepare isolated invocation",
+          "id": "fixture",
+          "shell": "bash",
+          "env": {
+            "FIXTURE_CASE": "${{ matrix.case }}"
+          },
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py init \"$FIXTURE_CASE\""
+        },
+        {
+          "name": "Save unique synthetic seed",
+          "id": "seed",
+          "if": "matrix.case == 'valid-hit' || matrix.case == 'tampered-hit'",
+          "uses": "actions/cache/save@v5",
+          "with": {
+            "path": "${{ steps.fixture.outputs.cache_dir }}",
+            "key": "${{ steps.fixture.outputs.cache_key }}"
+          }
+        },
+        {
+          "name": "Remove only local seed and arm observation",
+          "id": "armed",
+          "shell": "bash",
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py arm"
+        },
+        {
+          "name": "Invoke exact reviewed action",
+          "id": "candidate",
+          "continue-on-error": "${{ matrix.case == 'tampered-hit' }}",
+          "uses": "GoCodeAlone/setup-wfctl@6b37f3522cc7a1ab88849c87b208219bd49e3cc4",
+          "with": {
+            "version": "${{ steps.fixture.outputs.version }}",
+            "token": "",
+            "install-dir": "${{ env.HCD_ROOT }}/install",
+            "skip-update": "true",
+            "download-connect-timeout-seconds": "30",
+            "download-timeout-seconds": "120"
+          }
+        },
+        {
+          "name": "Record per-invocation path and bytes",
+          "if": "always() && steps.armed.outcome == 'success'",
+          "shell": "bash",
+          "env": {
+            "ACTION_OUTCOME": "${{ steps.candidate.outcome }}"
+          },
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py observe \"$ACTION_OUTCOME\""
+        },
+        {
+          "name": "Clean only claimed legacy files; retain cache for native post step",
+          "if": "always() && steps.fixture.outcome == 'success'",
+          "shell": "bash",
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py cleanup"
+        }
+      ]
+    }
+  }
+}
