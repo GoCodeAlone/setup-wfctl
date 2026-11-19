@@ -1,0 +1,74 @@
+{
+  "name": "Released v0.87.0 version stream follow-up (one run)",
+  "on": {
+    "push": {
+      "branches": [
+        "test/released-v087-version-streams-20261119"
+      ],
+      "paths": [
+        ".github/workflows/released-v087-version-streams.yml",
+        "tests/hosted_cache_download_fixture.py"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "real-release": {
+      "if": "github.repository == 'GoCodeAlone/setup-wfctl' && github.event.created && github.run_attempt == 1",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "name": "Check out reviewed fixture source",
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": {
+            "persist-credentials": false,
+            "ref": "${{ github.sha }}"
+          }
+        },
+        {
+          "name": "Prepare isolated real release invocation",
+          "id": "fixture",
+          "shell": "bash",
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py init real-release"
+        },
+        {
+          "name": "Arm absence and exact download observation",
+          "id": "armed",
+          "shell": "bash",
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py arm"
+        },
+        {
+          "name": "Invoke exact reviewed version-stream repair",
+          "id": "candidate",
+          "uses": "GoCodeAlone/setup-wfctl@8f6b815956263cace81656c2dd3ad894664d3114",
+          "with": {
+            "version": "v0.87.0",
+            "token": "",
+            "install-dir": "${{ env.HCD_ROOT }}/install",
+            "skip-update": "true",
+            "download-connect-timeout-seconds": "30",
+            "download-timeout-seconds": "120"
+          }
+        },
+        {
+          "name": "Record per-invocation path and exact bytes",
+          "if": "always() && steps.armed.outcome == 'success'",
+          "shell": "bash",
+          "env": {
+            "ACTION_OUTCOME": "${{ steps.candidate.outcome }}"
+          },
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py observe \"$ACTION_OUTCOME\""
+        },
+        {
+          "name": "Clean only claimed legacy files; preserve native cache post step",
+          "if": "always() && steps.fixture.outcome == 'success'",
+          "shell": "bash",
+          "run": "python3 -I -B tests/hosted_cache_download_fixture.py cleanup"
+        }
+      ]
+    }
+  }
+}
