@@ -30,6 +30,8 @@ class InstallationTests(unittest.TestCase):
         self.shadow = self.root / "shadow"
         self.installed.mkdir()
         self.shadow.mkdir()
+        self.runner_temp = self.root / "runner-temp"
+        self.runner_temp.mkdir()
         self.bin(self.installed, "v0.60.6")
         self.bin(self.shadow, "v0.83.0")
         self.env = {
@@ -40,6 +42,8 @@ class InstallationTests(unittest.TestCase):
             "USE_EXISTING": "false",
             "GITHUB_PATH": str(self.root / "github-path"),
             "GITHUB_OUTPUT": str(self.root / "github-output"),
+            "GITHUB_ACTION_PATH": str(ACTION.resolve().parent),
+            "RUNNER_TEMP": str(self.runner_temp),
         }
 
     def bin(self, directory, version):
@@ -53,10 +57,12 @@ class InstallationTests(unittest.TestCase):
         ).replace(
             "${{ inputs.install-dir }}", install_dir if install_dir is not None else str(self.installed)
         )
-        return subprocess.run(
+        result = subprocess.run(
             ["/bin/bash", "-c", script], env=self.env,
             cwd=self.root, capture_output=True, text=True, timeout=5,
         )
+        self.assertEqual(list(self.runner_temp.iterdir()), [], "Version capture leaked")
+        return result
 
     def test_installed_binary_wins_over_shadow_in_verification(self):
         result = self.run_step("Verify installation")
@@ -69,7 +75,8 @@ class InstallationTests(unittest.TestCase):
         self.bin(self.shadow, "v0.60.6")
         result = self.run_step("Verify installation")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Expected wfctl v0.60.6", result.stderr)
+        self.assertIn("wfctl version output is missing, ambiguous or unexpected", result.stderr)
+        self.assertIn("v0.83.0", result.stderr)
 
     def test_missing_installed_binary_does_not_use_path_fallback(self):
         (self.installed / "wfctl").unlink()
