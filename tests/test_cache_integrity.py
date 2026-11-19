@@ -142,6 +142,7 @@ shutil.copyfile(source, destination)
             "RUNNER_TEMP": str(self.runner_temp),
             "GITHUB_OUTPUT": str(self.root / "github-output"),
             "GITHUB_PATH": str(self.root / "github-path"),
+            "GITHUB_ACTION_PATH": str(ACTION.parent.resolve()),
             "EXEC_LOG": str(self.events),
             "FIXTURE_VERSION": VERSION,
             "FIXTURE_ASSET": self.asset,

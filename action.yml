@@ -105,8 +105,11 @@ runs:
       run: |
         set -euo pipefail
 
+        source "${GITHUB_ACTION_PATH}/scripts/read-version.sh"
         current_version() {
-          WFCTL_NO_UPDATE_CHECK=1 wfctl version 2>/dev/null | tr -d '[:space:]'
+          local version_bin
+          version_bin="$(command -v wfctl)" || return 1
+          wfctl_read_version "${version_bin}" "${TARGET_VERSION}"
         }
 
         run_wfctl_update() {
@@ -123,7 +126,9 @@ runs:
           exit 0
         fi
 
-        existing_version="$(current_version || true)"
+        if ! existing_version="$(current_version)"; then
+          existing_version=""
+        fi
         if [ "${existing_version}" = "${TARGET_VERSION}" ]; then
           echo "Using existing wfctl ${TARGET_VERSION} from ${existing_wfctl}."
           echo "use_existing=true" >> "$GITHUB_OUTPUT"
@@ -155,7 +160,9 @@ runs:
         echo "Found wfctl ${existing_version:-unknown} at ${existing_wfctl}; attempting wfctl update for ${TARGET_VERSION}."
         if run_wfctl_update; then
           hash -r
-          updated_version="$(current_version || true)"
+          if ! updated_version="$(current_version)"; then
+            updated_version=""
+          fi
           if [ "${updated_version}" = "${TARGET_VERSION}" ]; then
             echo "Updated existing wfctl to ${TARGET_VERSION}."
             echo "use_existing=true" >> "$GITHUB_OUTPUT"
@@ -296,12 +303,13 @@ runs:
         USE_EXISTING: ${{ steps.existing.outputs.use_existing }}
       run: |
         set -euo pipefail
+        source "${GITHUB_ACTION_PATH}/scripts/read-version.sh"
         if [ "${USE_EXISTING}" = "true" ]; then
           WFCTL_BIN="$(command -v wfctl)"
         else
           WFCTL_BIN="${INSTALL_DIR}/wfctl"
         fi
-        actual_version="$(WFCTL_NO_UPDATE_CHECK=1 "${WFCTL_BIN}" version | tr -d '[:space:]')"
+        actual_version="$(wfctl_read_version "${WFCTL_BIN}" "${TARGET_VERSION}")"
         if [ "${actual_version}" != "${TARGET_VERSION}" ]; then
           echo "::error::Expected wfctl ${TARGET_VERSION} from ${WFCTL_BIN}, got ${actual_version}" >&2
           exit 1
